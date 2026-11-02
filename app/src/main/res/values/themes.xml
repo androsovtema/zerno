@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Тёмный фон окна сразу при запуске, без белой вспышки. -->
+    <!-- Тёмный тёплый фон окна сразу при запуске, без белой вспышки. -->
     <style name="Theme.Zerno" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowBackground">@color/zerno_ink</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>

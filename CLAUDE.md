@@ -20,7 +20,10 @@ APK последней сборки `main` (для установки на те�
 - `app/src/main/kotlin/app/zerno/raw/` — проявка RAW на чистом Kotlin без Android API (тестируется на JVM)
 - `app/src/main/kotlin/app/zerno/camera/` — Camera2: сканер камер, RAW-съёмка, перевод метаданных в типы `raw`, сохранение в MediaStore
 - `app/src/main/kotlin/app/zerno/ui/` — Compose-экраны (камера, редактор, галерея, настройки) и `ZernoViewModel`;
-  экраны разделены на `*Screen` (ViewModel) и `*Content` (вёрстка от состояния, для скриншотов)
+  экраны разделены на `*Screen` (ViewModel) и `*Content` (вёрстка от состояния, для скриншотов).
+  `Brand.kt` — общие компоненты (логотип, лента профилей, затвор, шкала экспозиции, кнопки);
+  `theme/` — палитра «проявочной», шрифты Prata + IBM Plex Mono, зерно интерфейса (`Grain.kt`)
+- `tools/brand/make_icons.py` — генерирует иконку и знак (нужны numpy и Pillow); `docs/brand/` — превью иконки
 - `app/src/main/kotlin/app/zerno/` — `ZernoApp` (журнал, перехват падений), `Prefs`, `ShotRepository`
 - `docs/research/` — исследования (Lampa, особенности устройств)
 - `app/src/test/` — юнит-тесты (JVM), `app/src/androidTest/` — инструментальные (нужен девайс/эмулятор, в облаке не запускаются)
@@ -54,7 +57,7 @@ Android CLI (`android`, Google): `android docs ...` — поиск по офиц
 
 ## Продукт
 
-Камера в духе Lampa (iOS): RAW → проявка своими профилями, без HDR и ИИ. Версия 0.2.1; первый отчёт с Oppo Find X9 Ultra разобран в `docs/HISTORY.md` §9.
+Камера в духе Lampa (iOS): RAW → проявка своими профилями, без HDR и ИИ. Версия 0.3.0 (айдентика и интерфейс — `docs/HISTORY.md` §10); первый отчёт с Oppo Find X9 Ultra разобран в `docs/HISTORY.md` §9.
 Тестовое устройство: Oppo Find X9 Ultra (у тестировщицы Алины). У Oppo/realme/OnePlus ненадёжные цветовые данные:
 матрица ISP бывает только в первых кадрах (дальше единичная), ForwardMatrix бывает заглушкой sRGB.
 Проверено на DNG OnePlus 6 и Redmi Note 8T: ColorMatrix там тоже заглушка (= XYZ→sRGB, «сенсор как sRGB»),

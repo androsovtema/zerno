@@ -49,7 +49,7 @@ fun MainNavigation() {
   state.crashReport?.let { report ->
     AlertDialog(
       onDismissRequest = vm::dismissCrash,
-      title = { Text("Zerno закрылся с ошибкой") },
+      title = { Text("Зерно закрылось с ошибкой") },
       text = { Text("В прошлый раз приложение упало. Отправьте отчёт разработчику — это поможет быстро исправить.") },
       confirmButton = {
         TextButton(onClick = { share(context, report, "Отчёт об ошибке"); vm.dismissCrash() }) { Text("Отправить") }

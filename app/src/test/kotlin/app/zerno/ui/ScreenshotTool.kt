@@ -4,6 +4,17 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Size
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import app.zerno.raw.SwatchScene
+import app.zerno.ui.theme.LocalLiveGrain
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -52,21 +63,35 @@ class ScreenshotTool {
 
   private fun shoot(name: String, content: @Composable () -> Unit) {
     assumeTrue("ZERNO_SHOTS_DIR не задан", dir != null)
-    compose.setContent { ZernoTheme { content() } }
+    compose.setContent {
+      CompositionLocalProvider(LocalLiveGrain provides false) { ZernoTheme { content() } }
+    }
     compose.waitForIdle()
     val bmp = compose.onRoot().captureToImage().asAndroidBitmap()
     File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
   }
 
   private val fakePreview: @Composable (CameraOption) -> Unit = {
-    Box(Modifier.fillMaxSize().background(Color(0xFF3A4A3A)))
+    Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(14.dp))) {
+      sample?.let {
+        Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+      } ?: Box(Modifier.fillMaxSize().background(Color(0xFF3A4A3A)))
+      ViewfinderMarks()
+    }
+  }
+
+  private val swatches: Map<Profile, Bitmap> by lazy {
+    Profile.entries.associateWith { p ->
+      val img = SwatchScene.develop(p)
+      Bitmap.createBitmap(img.argb, img.width, img.height, Bitmap.Config.ARGB_8888)
+    }
   }
 
 
   @Test
   fun cameraWithTip() = shoot("01_camera_tip") {
     CameraContent(
-      UiState(scan = null, selected = options[1], showTip = true, lastThumb = sample, lastShotName = "x"),
+      UiState(scan = app.zerno.camera.CameraScan(options, ""), selected = options[1], showTip = true, profilePreviews = swatches),
       granted = true, asked = false, flashAlpha = 0f,
       {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, preview = fakePreview,
     )
@@ -77,6 +102,7 @@ class ScreenshotTool {
     CameraContent(
       UiState(
         scan = app.zerno.camera.CameraScan(options, ""), selected = options[1], profile = Profile.WARM_FILM,
+        profilePreviews = swatches, gallery = fakeGallery,
         processing = 1, lastThumb = sample, lastShotName = "x", message = "DNG не сохранён: пример сообщения",
       ),
       granted = true, asked = false, flashAlpha = 0f,
@@ -110,6 +136,7 @@ class ScreenshotTool {
           name = "x", settings = EditSettings(Profile.NATURAL, evOffset = 0.5),
           preview = sample, info = "Превью 1000×750\nЦвет: Типовая матрица",
         ),
+        profilePreviews = swatches,
       ),
       name = "x", onBack = {}, onDelete = {}, onUpdate = {}, onSave = {},
     )
@@ -119,6 +146,35 @@ class ScreenshotTool {
   fun editorError() = shoot("06_editor_error") {
     EditorContent(
       UiState(editor = EditorState(name = "x", settings = EditSettings(Profile.NATURAL), error = "RAW этого кадра уже удалён или повреждён")),
+      name = "x", onBack = {}, onDelete = {}, onUpdate = {}, onSave = {},
+    )
+  }
+
+  private val fakeGallery: List<app.zerno.ShotEntry> by lazy {
+    val tmp = java.nio.file.Files.createTempDirectory("zerno-shots").toFile()
+    List(14) { i ->
+      val raw = File(tmp, "s$i.zraw").apply { if (i != 4) writeText("x") }
+      app.zerno.ShotEntry("ZERNO_$i", 1_000L * i, File(tmp, "s$i.jpg"), raw, null)
+    }
+  }
+
+  @Test
+  fun gallery() = shoot("07_gallery") {
+    GalleryContent(fakeGallery, { e -> if (e.name.endsWith("3")) swatches[Profile.MONO] else sample }, {}, {})
+  }
+
+  @Test
+  fun galleryEmpty() = shoot("08_gallery_empty") { GalleryContent(emptyList(), { null }, {}, {}) }
+
+  @Test
+  fun settings() = shoot("09_settings") {
+    SettingsContent(UiState(saveDng = true), "0.3.0", {}, {}, {}, {}, {}, {})
+  }
+
+  @Test
+  fun editorDetails() = shoot("10_editor_details") {
+    EditorContent(
+      UiState(editor = EditorState(name = "x", settings = EditSettings(Profile.MONO), preview = sample, profilePreviews = swatches)),
       name = "x", onBack = {}, onDelete = {}, onUpdate = {}, onSave = {},
     )
   }

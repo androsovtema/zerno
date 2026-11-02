@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Тёплый «проявочный» тёмный: совпадает с Ink в ui/theme/Theme.kt. -->
+    <color name="zerno_ink">#FF15100D</color>
+</resources>
