@@ -232,6 +232,7 @@ class ZernoViewModel(app: Application) : AndroidViewModel(app) {
       runCatching { repo.save(shot, thumb, uri) }.onFailure { EventLog.add("Копия для перепроявки не сохранена", it) }
       EventLog.add("Готов ${shot.name}: ${p.profile.title}, ${"%+.2f".format(ev)} EV, " +
         "${pipeline.used.title}, ${(System.nanoTime() - started) / 1_000_000} мс")
+      EventLog.add(colorReport(shot, pipeline))
       refreshGallery()
     } catch (e: Throwable) {
       EventLog.add("Обработка ${shot.name} не удалась", e)
@@ -401,6 +402,17 @@ class ZernoViewModel(app: Application) : AndroidViewModel(app) {
   private fun stepFor(raw: RawImage, target: Int): Int {
     val s = ceil(maxOf(raw.width, raw.height) / target.toDouble()).toInt().coerceAtLeast(2)
     return if (s % 2 == 0) s else s + 1
+  }
+
+  /** Всё о цвете кадра одной записью: по ней разбираем отчёты тестировщиков без самого RAW. */
+  private fun colorReport(shot: Shot, pipeline: app.zerno.raw.ColorPipeline) = buildString {
+    append("  ${shot.captureInfo.trim().replace("\n", "; ")}")
+    append("; цвет: ${pipeline.used.title}")
+    pipeline.sceneTemperature?.let { append(", сцена ≈${"%.0f".format(it)} K") }
+    append(", WB ${pipeline.wbGains.joinToString("/") { "%.3f".format(it) }}")
+    append(", матрица ISP: ${shot.meta.ispMatrix?.let { if (it.isIdentity()) "единичная" else "есть" } ?: "нет"}")
+    if (pipeline.notes.isNotEmpty()) append("; ${pipeline.notes.joinToString("; ")}")
+    append("; sRGB←сенсор: ${pipeline.srgbFromCamera}")
   }
 
   private fun captureInfo(option: CameraOption, r: CaptureResult, raw: RawImage, shading: app.zerno.raw.ShadingMap?) =

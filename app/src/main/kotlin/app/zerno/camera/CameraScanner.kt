@@ -23,6 +23,8 @@ data class CameraOption(
   val focalEq: Int,
   /** Подпись для пользователя: «1×», «3×», «Фронт». */
   val zoomLabel: String = "",
+  /** ColorMatrix настоящая, а не заглушка/единичная (у логической камеры Oppo — заглушка). */
+  val calibrated: Boolean = false,
 ) {
   val key: String get() = physicalId?.let { "$logicalId/$it" } ?: logicalId
 }
@@ -69,20 +71,38 @@ class CameraScanner(private val manager: CameraManager) {
     }
     val final = withZoomLabels(dedupe(options))
     sb.appendLine()
-    sb.appendLine("Доступно для RAW-съёмки: ${final.joinToString { "${it.zoomLabel} (${it.label}, ${it.rawSize})" }.ifEmpty { "ничего" }}")
+    sb.appendLine("Доступно для RAW-съёмки: ${final.joinToString {
+      "${it.zoomLabel} (${it.label}, ${it.rawSize}${if (it.calibrated) "" else ", без калибровки цвета"})"
+    }.ifEmpty { "ничего" }}")
     return CameraScan(final, sb.toString())
   }
 
   private fun option(logical: String, physical: String?, chars: CameraCharacteristics, size: Size): CameraOption {
     val front = chars.get(CameraCharacteristics.LENS_FACING) == CameraMetadata.LENS_FACING_FRONT
     val id = physical?.let { "$logical/$it" } ?: logical
-    return CameraOption(logical, physical, "$id · ${lensLabel(chars)}", size, front, focalEq(chars))
+    return CameraOption(logical, physical, "$id · ${lensLabel(chars)}", size, front, focalEq(chars),
+      calibrated = hasRealColorMatrix(chars))
   }
 
-  /** Один и тот же модуль бывает виден и как отдельная камера, и как физическая — оставляем один. */
+  private fun hasRealColorMatrix(chars: CameraCharacteristics): Boolean {
+    val matrices = listOfNotNull(
+      chars.get(CameraCharacteristics.SENSOR_COLOR_TRANSFORM1),
+      chars.get(CameraCharacteristics.SENSOR_COLOR_TRANSFORM2),
+    ).map { it.toMat3() }
+    return matrices.isNotEmpty() && matrices.none {
+      it.isIdentity() || ColorPipelineResolver.looksLikePlaceholderColorMatrix(it)
+    }
+  }
+
+  /**
+   * Один и тот же модуль бывает виден и как отдельная камера, и как физическая — оставляем один.
+   * Сначала — с настоящей калибровкой цвета: на Oppo Find X9 Ultra логическая камера 0 отдаёт
+   * заглушку вместо ColorMatrix, а тот же модуль под id 2 — настоящую матрицу.
+   */
   private fun dedupe(list: List<CameraOption>): List<CameraOption> {
     val result = mutableListOf<CameraOption>()
-    for (o in list.sortedBy { if (it.physicalId == null) 0 else 1 }) {
+    val preferred = list.sortedWith(compareBy({ !it.calibrated }, { if (it.physicalId == null) 0 else 1 }))
+    for (o in preferred) {
       val dup = result.any {
         it.front == o.front && it.rawSize == o.rawSize && kotlin.math.abs(it.focalEq - o.focalEq) <= 1
       }

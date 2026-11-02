@@ -16,6 +16,7 @@ class ZernoApp : Application() {
   override fun onCreate() {
     super.onCreate()
     CrashReporter.install(this)
+    EventLog.attach(File(filesDir, "events.log"))
     EventLog.add("Запуск ${appVersion(this)} на ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
   }
 }
@@ -24,17 +25,41 @@ fun appVersion(context: Context): String = runCatching {
   context.packageManager.getPackageInfo(context.packageName, 0).versionName
 }.getOrNull() ?: "?"
 
-/** Журнал событий в памяти (последние 300 строк): уходит в отчёты об ошибках. */
+/**
+ * Журнал событий: последние [KEEP] строк, в памяти и в файле. Файл переживает перезапуск —
+ * иначе журнал, отправленный после повторного запуска, не содержит самих снимков.
+ */
 object EventLog {
+  private const val KEEP = 600
   private val lines = ArrayDeque<String>()
-  private val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+  private val time = SimpleDateFormat("dd.MM HH:mm:ss.SSS", Locale.US)
+  private var file: File? = null
+
+  @Synchronized
+  fun attach(target: File) {
+    file = target
+    runCatching {
+      if (target.exists()) {
+        val previous = target.readLines().takeLast(KEEP)
+        lines.clear()
+        lines.addAll(previous)
+        target.writeText(previous.joinToString("\n", postfix = if (previous.isEmpty()) "" else "\n"))
+      }
+      append("— — —")
+    }.onFailure { Log.w("Zerno", "Журнал на диске недоступен", it) }
+  }
 
   @Synchronized
   fun add(message: String, error: Throwable? = null) {
     val line = "${time.format(Date())} $message" + (error?.let { " — ${it.javaClass.simpleName}: ${it.message}" } ?: "")
     Log.i("Zerno", line, error)
+    append(line)
+  }
+
+  private fun append(line: String) {
     lines.addLast(line)
-    while (lines.size > 300) lines.removeFirst()
+    while (lines.size > KEEP) lines.removeFirst()
+    file?.let { f -> runCatching { f.appendText(line + "\n") } }
   }
 
   @Synchronized

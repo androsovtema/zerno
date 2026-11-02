@@ -18,6 +18,27 @@ object Illuminant {
     D50 -> "D50"
     else -> "код $code"
   }
+
+  /** Цветовая температура источника, К (значения как в DNG SDK); null — неизвестный код. */
+  fun temperature(code: Int): Double? = when (code) {
+    DAYLIGHT, 4, 9 -> 5500.0 // дневной свет, вспышка, ясно
+    2, 14 -> 4150.0 // флуоресцентная, холодная белая
+    3, STANDARD_A -> 2856.0 // лампа накаливания
+    10 -> 6500.0 // облачно
+    11 -> 7500.0 // тень
+    12 -> 6430.0
+    13 -> 5000.0
+    15 -> 3450.0
+    16 -> 2940.0
+    18 -> 4871.0 // B
+    19 -> 6774.0 // C
+    D55 -> 5503.0
+    D65 -> 6504.0
+    D75 -> 7504.0
+    D50 -> 5003.0
+    24 -> 3200.0 // студийная лампа
+    else -> null
+  }
 }
 
 /** Калибровка сенсора для одного источника света (аналог ColorMatrix/ForwardMatrix в DNG). */
@@ -57,13 +78,15 @@ class ColorPipeline(
   val srgbFromCamera: Mat3,
   val used: ColorStrategy,
   val notes: List<String>,
+  /** Оценка цветовой температуры сцены по нейтрали, К (если её удалось посчитать). */
+  val sceneTemperature: Double? = null,
 )
 
 object ColorPipelineResolver {
 
   fun resolve(meta: ColorMetadata, requested: ColorStrategy): ColorPipeline {
     val notes = mutableListOf<String>()
-    val sensorMatrix = sensorMatrix(meta, notes)
+    val (sensorMatrix, temperature) = sensorMatrix(meta, notes)
     val ispMatrix = meta.ispMatrix?.takeUnless { it.isIdentity() }
     if (meta.ispMatrix != null && ispMatrix == null) {
       notes += "Матрица ISP единичная — устройство её не передало (известно для Oppo)"
@@ -94,28 +117,95 @@ object ColorPipelineResolver {
       ColorStrategy.GENERIC -> GENERIC_PHONE
       else -> Mat3.IDENTITY
     }
-    return ColorPipeline(normalizeGains(rawGains), matrix, strategy, notes)
+    return ColorPipeline(normalizeGains(rawGains), matrix, strategy, notes, temperature)
   }
 
   /**
    * Матрица «сенсор после баланса белого → линейный sRGB» из ColorMatrix, как в dcraw:
    * cam_rgb = cam_xyz · xyz_rgb, нормируем строки, обращаем. ForwardMatrix сознательно не
    * используем: у Oppo/realme в ней бывает заглушка вместо калибровки.
+   *
+   * Если калибровок две (обычно D65 и лампа накаливания), смешиваем их по цветовой температуре
+   * сцены, как требует спецификация DNG: при тёплом свете матрица D65 заметно искажает красные.
    */
-  private fun sensorMatrix(meta: ColorMetadata, notes: MutableList<String>): Mat3? {
-    val cal = pickCalibration(meta.calibrations) ?: return null
-    notes += "Калибровка сенсора: ${Illuminant.name(cal.illuminant)}"
-    val camFromXyz = cal.calibration?.let { it * cal.colorMatrix } ?: cal.colorMatrix
-    val camFromSrgb = (camFromXyz * Mat3.XYZ_FROM_SRGB).normalizeRows()
-    if (looksLikePlaceholderColorMatrix(camFromXyz)) {
+  private fun sensorMatrix(meta: ColorMetadata, notes: MutableList<String>): Pair<Mat3?, Double?> {
+    val usable = meta.calibrations.filter { !it.colorMatrix.isIdentity() && it.colorMatrix.determinant() != 0.0 }
+    if (usable.isEmpty()) return null to null
+    if (usable.any { looksLikePlaceholderColorMatrix(it.camFromXyz()) }) {
       // Так пишут OnePlus/Xiaomi/Oppo: ColorMatrix = XYZ→sRGB, т. е. «сенсор видит как sRGB».
-      // Это не калибровка, а заглушка: цвета с ней блёклые. Не используем.
+      // Это не калибровка, а заглушка: цвета с ней блёклые. Если заглушка хоть в одной из пар —
+      // вторая тоже не заслуживает доверия (у логической камеры Oppo вторая вообще бессмысленная).
       notes += "Калибровка сенсора — заглушка (сенсор = sRGB), не используем"
-      return null
+      return null to null
     }
-    val result = camFromSrgb?.inverse()
+    val blend = blendForNeutral(usable, meta.neutral)
+    val camFromXyz = if (blend != null) {
+      notes += "Калибровка сенсора: ${"%.0f".format(blend.temperature)} K, " +
+        "${Illuminant.name(blend.first.illuminant)} ${"%.0f".format(blend.weight * 100)} % / " +
+        "${Illuminant.name(blend.second.illuminant)} ${"%.0f".format((1 - blend.weight) * 100)} %"
+      blend.matrix
+    } else {
+      val cal = pickCalibration(usable) ?: return null to null
+      notes += "Калибровка сенсора: ${Illuminant.name(cal.illuminant)}"
+      cal.camFromXyz()
+    }
+    val result = (camFromXyz * Mat3.XYZ_FROM_SRGB).normalizeRows()?.inverse()
     if (result == null) notes += "Матрица сенсора вырождена — пропускаем"
-    return result
+    return result to blend?.temperature
+  }
+
+  /** ColorMatrix с поправкой экземпляра сенсора: XYZ → цвет сенсора. */
+  private fun SensorCalibration.camFromXyz(): Mat3 = calibration?.let { it * colorMatrix } ?: colorMatrix
+
+  class Blend(
+    val first: SensorCalibration,
+    val second: SensorCalibration,
+    /** Доля первой калибровки, 0..1. */
+    val weight: Double,
+    val temperature: Double,
+    val matrix: Mat3,
+  )
+
+  /**
+   * Алгоритм DNG: по нейтрали сенсора итеративно находим цветовую температуру сцены
+   * (нейтраль → XYZ через смешанную матрицу → xy → температура по МакКами) и смешиваем
+   * две ColorMatrix линейно по обратной температуре (майредам). null — смешивать нечего.
+   */
+  fun blendForNeutral(calibrations: List<SensorCalibration>, neutral: DoubleArray?): Blend? {
+    if (neutral == null || neutral.any { it <= 1e-6 }) return null
+    val known = calibrations.mapNotNull { c -> Illuminant.temperature(c.illuminant)?.let { c to it } }
+      .sortedByDescending { it.second }
+    if (known.size < 2) return null
+    val (first, t1) = known.first()
+    val (second, t2) = known.last()
+    if (t1 - t2 < 500) return null
+    val m1 = first.camFromXyz()
+    val m2 = second.camFromXyz()
+
+    fun weightFor(t: Double) = ((1 / t - 1 / t2) / (1 / t1 - 1 / t2)).coerceIn(0.0, 1.0)
+    fun mix(w: Double) = Mat3(DoubleArray(9) { w * m1.m[it] + (1 - w) * m2.m[it] })
+
+    var weight = 0.5
+    var temperature = 5000.0
+    repeat(20) {
+      val xyz = mix(weight).inverse()?.apply(neutral) ?: return null
+      val sum = xyz.sum()
+      if (sum <= 1e-9) return null
+      temperature = mccamy(xyz[0] / sum, xyz[1] / sum).coerceIn(2000.0, 12000.0)
+      val next = weightFor(temperature)
+      if (kotlin.math.abs(next - weight) < 1e-4) {
+        weight = next
+        return Blend(first, second, weight, temperature, mix(weight))
+      }
+      weight = next
+    }
+    return Blend(first, second, weight, temperature, mix(weight))
+  }
+
+  /** Коррелированная цветовая температура по координатам xy (формула МакКами, 2000–12500 K). */
+  fun mccamy(x: Double, y: Double): Double {
+    val n = (x - 0.3320) / (0.1858 - y)
+    return 449 * n * n * n + 3525 * n * n + 6823.3 * n + 5520.33
   }
 
   /** Предпочитаем дневной свет (D65 и близкие), иначе — вторую матрицу. */

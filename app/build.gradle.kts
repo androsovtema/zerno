@@ -11,8 +11,8 @@ android {
     applicationId = "app.zerno"
     minSdk = 29
     targetSdk = 37
-    versionCode = 2
-    versionName = "0.2.0"
+    versionCode = 3
+    versionName = "0.2.1"
   }
 
   // Общий отладочный ключ в репозитории: сборки из CI и любой облачной сессии ставятся поверх друг друга.
