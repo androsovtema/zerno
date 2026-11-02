@@ -2,6 +2,10 @@
 
 Отвечай пользователю по-русски. Пользователь работает в основном с телефона через облачные сессии Claude Code — делай изменения сам, коммить и пушь, давай короткие отчёты.
 
+**Начни с `docs/HISTORY.md`** — журнал всех решений, проблем и обходов первой сессии, план следующих шагов.
+
+APK последней сборки `main` (для установки на телефон): https://github.com/androsovtema/zerno/releases/latest/download/zerno.apk
+
 ## Стек (версии проверены 2026-11-02)
 
 - Kotlin 2.4.21, Jetpack Compose (BOM 2026.09.00), Material 3, Navigation 3
@@ -15,7 +19,9 @@
 
 - `app/src/main/kotlin/app/zerno/raw/` — проявка RAW на чистом Kotlin без Android API (тестируется на JVM)
 - `app/src/main/kotlin/app/zerno/camera/` — Camera2: сканер камер, RAW-съёмка, перевод метаданных в типы `raw`, сохранение в MediaStore
-- `app/src/main/kotlin/app/zerno/ui/` — Compose-экраны (камера, результат, диагностика) и `ZernoViewModel`
+- `app/src/main/kotlin/app/zerno/ui/` — Compose-экраны (камера, редактор, галерея, настройки) и `ZernoViewModel`;
+  экраны разделены на `*Screen` (ViewModel) и `*Content` (вёрстка от состояния, для скриншотов)
+- `app/src/main/kotlin/app/zerno/` — `ZernoApp` (журнал, перехват падений), `Prefs`, `ShotRepository`
 - `docs/research/` — исследования (Lampa, особенности устройств)
 - `app/src/test/` — юнит-тесты (JVM), `app/src/androidTest/` — инструментальные (нужен девайс/эмулятор, в облаке не запускаются)
 
@@ -42,11 +48,13 @@ Android CLI (`android`, Google): `android docs ...` — поиск по офиц
 
 - `.claude/hooks/session-start.sh` при старте облачной сессии ставит Android SDK в `~/android-sdk` и пишет `local.properties`. Если меняешь compileSdk или build tools — обнови `PACKAGES` в хуке.
 - Maven Central (repo.maven.apache.org) отвечает 429 на облачные IP, поэтому в `settings.gradle.kts` первым стоит зеркало Google. Не убирай его.
-- Эмулятора в облаке нет. Проверка — сборка, юнит-тесты, lint. Готовый APK пользователь скачивает из GitHub Actions (workflow `Android build`, артефакт `zerno-debug-apk`).
+- Эмулятора в облаке нет (нет KVM). Проверка — сборка, юнит-тесты, lint, проявка реальных DNG, скриншоты на JVM.
+- CI на push в `main` публикует APK в релиз `latest-build` (ссылка выше). Подпись — `app/debug.keystore` из репозитория,
+  чтобы обновления ставились поверх. Не меняй ключ без нужды: у тестировщиков придётся удалять приложение.
 
 ## Продукт
 
-Камера в духе Lampa (iOS): RAW → проявка своими профилями, без HDR и ИИ. Сейчас — прототип проявки RAW.
+Камера в духе Lampa (iOS): RAW → проявка своими профилями, без HDR и ИИ. Версия 0.2.0, на телефоне ещё не запускалась.
 Тестовое устройство: Oppo Find X9 Ultra (у тестировщицы Алины). У Oppo/realme/OnePlus ненадёжные цветовые данные:
 матрица ISP бывает только в первых кадрах (дальше единичная), ForwardMatrix бывает заглушкой sRGB.
 Проверено на DNG OnePlus 6 и Redmi Note 8T: ColorMatrix там тоже заглушка (= XYZ→sRGB, «сенсор как sRGB»),
