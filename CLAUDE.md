@@ -27,6 +27,15 @@
 ./gradlew lintDebug            # Android Lint
 ```
 
+Инструменты отладки без телефона (в CI не запускаются):
+
+```bash
+# Проявить настоящие DNG всеми профилями в PNG (папка/out). Образцы: raw.pixls.us (OnePlus, Xiaomi)
+ZERNO_DNG_DIR=/путь/к/dng ./gradlew testDebugUnitTest --tests '*DngDevelopTool*'
+# Скриншоты экранов (Robolectric). sample.png в папке подставляется как снимок
+ZERNO_SHOTS_DIR=/путь ./gradlew testDebugUnitTest --tests '*ScreenshotTool*'
+```
+
 Android CLI (`android`, Google): `android docs ...` — поиск по официальной документации, `android sdk install <pkg>` — пакеты SDK. Подробнее — skill `android-cli`.
 
 ## Облачное окружение
@@ -40,7 +49,12 @@ Android CLI (`android`, Google): `android docs ...` — поиск по офиц
 Камера в духе Lampa (iOS): RAW → проявка своими профилями, без HDR и ИИ. Сейчас — прототип проявки RAW.
 Тестовое устройство: Oppo Find X9 Ultra (у тестировщицы Алины). У Oppo/realme/OnePlus ненадёжные цветовые данные:
 матрица ISP бывает только в первых кадрах (дальше единичная), ForwardMatrix бывает заглушкой sRGB.
-Поэтому используем ColorMatrix (подход dcraw), а ForwardMatrix не используем. См. `docs/research/lampa.md`.
+Проверено на DNG OnePlus 6 и Redmi Note 8T: ColorMatrix там тоже заглушка (= XYZ→sRGB, «сенсор как sRGB»),
+цвета с ней блёклые. Порядок в «Авто»: настоящая ColorMatrix → матрица ISP (запоминаем из первых кадров превью) →
+типовая матрица смартфона (`ColorPipelineResolver.GENERIC_PHONE`). ForwardMatrix не используем.
+Поток кадра: снимок → копия RAW (буфер камеры сразу свободен) → фоновая очередь: автоэкспозиция → миниатюра →
+проявка (MHC, полное разрешение до 26 Мп) → JPEG в Pictures/Zerno → .zraw в files/shots для перепроявки.
+Падения пишутся в files/last_crash.txt и предлагаются к отправке при следующем запуске. См. `docs/research/lampa.md`.
 
 ## Правила
 

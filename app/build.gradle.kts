@@ -11,8 +11,8 @@ android {
     applicationId = "app.zerno"
     minSdk = 29
     targetSdk = 37
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "0.2.0"
   }
 
   buildTypes {
@@ -30,6 +30,22 @@ android {
     aidl = false
     buildConfig = false
     shaders = false
+  }
+
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      all {
+        // Robolectric сам качает образ Android с Maven Central; облачные IP получают 429 — берём зеркало Google.
+        it.systemProperty("robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2")
+        it.maxHeapSize = "3g"
+        it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+        System.getenv("ZERNO_DNG_DIR")?.let { dir -> it.environment("ZERNO_DNG_DIR", dir) }
+        // Скриншоты экранов — только по запросу: иначе каждый прогон тянет образ Android для Robolectric.
+        val shots = System.getenv("ZERNO_SHOTS_DIR")
+        if (shots != null) it.environment("ZERNO_SHOTS_DIR", shots) else it.exclude("**/ScreenshotTool*")
+      }
+    }
   }
 
   packaging {
@@ -66,6 +82,9 @@ dependencies {
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.robolectric)
+  testImplementation(composeBom)
+  testImplementation(libs.androidx.compose.ui.test.junit4)
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)

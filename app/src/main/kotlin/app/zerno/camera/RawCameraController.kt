@@ -50,6 +50,9 @@ class RawCameraController(private val manager: CameraManager) {
   private var option: CameraOption? = null
   private var characteristics: CameraCharacteristics? = null
 
+  /** Вызывается, если камеру отобрали или она сломалась уже после открытия. */
+  @Volatile var onCameraLost: ((String) -> Unit)? = null
+
   @Volatile private var latchedIsp: Mat3? = null
   @Volatile private var pendingImage: CompletableDeferred<Image>? = null
 
@@ -80,14 +83,25 @@ class RawCameraController(private val manager: CameraManager) {
 
     val cam = suspendCancellableCoroutine { cont ->
       manager.openCamera(option.logicalId, executor, object : CameraDevice.StateCallback() {
-        override fun onOpened(camera: CameraDevice) = cont.resume(camera)
+        override fun onOpened(camera: CameraDevice) {
+          if (cont.isActive) cont.resume(camera) else camera.close()
+        }
         override fun onDisconnected(camera: CameraDevice) {
           camera.close()
-          if (cont.isActive) cont.resumeWithException(IllegalStateException("Камера отключена"))
+          if (cont.isActive) cont.resumeWithException(IllegalStateException("Камера занята другим приложением"))
+          else onCameraLost?.invoke("Камеру забрало другое приложение")
         }
         override fun onError(camera: CameraDevice, error: Int) {
           camera.close()
-          if (cont.isActive) cont.resumeWithException(IllegalStateException("Ошибка камеры $error"))
+          val text = when (error) {
+            ERROR_CAMERA_IN_USE, ERROR_MAX_CAMERAS_IN_USE -> "камера занята"
+            ERROR_CAMERA_DISABLED -> "камера запрещена политикой устройства"
+            ERROR_CAMERA_DEVICE -> "сбой камеры"
+            ERROR_CAMERA_SERVICE -> "сбой системной службы камеры"
+            else -> "код $error"
+          }
+          if (cont.isActive) cont.resumeWithException(IllegalStateException("Ошибка камеры: $text"))
+          else onCameraLost?.invoke("Ошибка камеры: $text")
         }
       })
     }

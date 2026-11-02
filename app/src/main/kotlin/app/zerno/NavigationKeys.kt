@@ -5,6 +5,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object CameraKey : NavKey
 
-@Serializable data object ResultKey : NavKey
+@Serializable data class EditorKey(val name: String) : NavKey
 
-@Serializable data object DiagnosticsKey : NavKey
+@Serializable data object GalleryKey : NavKey
+
+@Serializable data object SettingsKey : NavKey

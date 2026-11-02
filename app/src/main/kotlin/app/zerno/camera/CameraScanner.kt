@@ -15,8 +15,14 @@ import app.zerno.raw.Illuminant
 data class CameraOption(
   val logicalId: String,
   val physicalId: String?,
+  /** Техническое имя для отчётов: id, направление, фокус. */
   val label: String,
   val rawSize: Size,
+  val front: Boolean,
+  /** Эквивалентное фокусное расстояние, мм (0 — неизвестно). */
+  val focalEq: Int,
+  /** Подпись для пользователя: «1×», «3×», «Фронт». */
+  val zoomLabel: String = "",
 ) {
   val key: String get() = physicalId?.let { "$logicalId/$it" } ?: logicalId
 }
@@ -42,7 +48,7 @@ class CameraScanner(private val manager: CameraManager) {
       sb.appendLine()
       sb.appendLine("=== Камера $id")
       describe(chars, sb, indent = "")
-      rawSize(chars)?.let { options += CameraOption(id, null, "$id · ${lensLabel(chars)}", it) }
+      rawSize(chars)?.let { options += option(id, null, chars, it) }
 
       val physical = chars.physicalCameraIds
       if (physical.isNotEmpty()) {
@@ -56,14 +62,60 @@ class CameraScanner(private val manager: CameraManager) {
           }
           describe(pc, sb, indent = "  ")
           if (pid !in ids) {
-            rawSize(pc)?.let { options += CameraOption(id, pid, "$id/$pid · ${lensLabel(pc)}", it) }
+            rawSize(pc)?.let { options += option(id, pid, pc, it) }
           }
         }
       }
     }
+    val final = withZoomLabels(dedupe(options))
     sb.appendLine()
-    sb.appendLine("Доступно для RAW-съёмки: ${options.joinToString { it.label }.ifEmpty { "ничего" }}")
-    return CameraScan(options, sb.toString())
+    sb.appendLine("Доступно для RAW-съёмки: ${final.joinToString { "${it.zoomLabel} (${it.label}, ${it.rawSize})" }.ifEmpty { "ничего" }}")
+    return CameraScan(final, sb.toString())
+  }
+
+  private fun option(logical: String, physical: String?, chars: CameraCharacteristics, size: Size): CameraOption {
+    val front = chars.get(CameraCharacteristics.LENS_FACING) == CameraMetadata.LENS_FACING_FRONT
+    val id = physical?.let { "$logical/$it" } ?: logical
+    return CameraOption(logical, physical, "$id · ${lensLabel(chars)}", size, front, focalEq(chars))
+  }
+
+  /** Один и тот же модуль бывает виден и как отдельная камера, и как физическая — оставляем один. */
+  private fun dedupe(list: List<CameraOption>): List<CameraOption> {
+    val result = mutableListOf<CameraOption>()
+    for (o in list.sortedBy { if (it.physicalId == null) 0 else 1 }) {
+      val dup = result.any {
+        it.front == o.front && it.rawSize == o.rawSize && kotlin.math.abs(it.focalEq - o.focalEq) <= 1
+      }
+      if (!dup) result += o
+    }
+    return result
+  }
+
+  private fun withZoomLabels(list: List<CameraOption>): List<CameraOption> {
+    val back = list.filter { !it.front }
+    // Основная камера — с фокусом, ближайшим к 24 мм (так считают и производители).
+    val main = back.filter { it.focalEq > 0 }.minByOrNull { kotlin.math.abs(it.focalEq - 24) }
+    val labeled = list.map { o ->
+      val label = when {
+        o.front -> "Фронт"
+        main == null || o.focalEq <= 0 -> o.logicalId
+        else -> {
+          val z = o.focalEq.toDouble() / main.focalEq
+          if (z >= 1.5 && kotlin.math.abs(z - Math.round(z)) < 0.15) "${Math.round(z)}×"
+          else if (kotlin.math.abs(z - 1) < 0.08) "1×"
+          else "%.1f×".format(z).replace(',', '.')
+        }
+      }
+      o.copy(zoomLabel = label)
+    }
+    return labeled.sortedWith(compareBy({ it.front }, { it.focalEq }))
+  }
+
+  private fun focalEq(chars: CameraCharacteristics): Int {
+    val focal = chars.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.firstOrNull() ?: return 0
+    val sensor = chars.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE) ?: return 0
+    val diag = kotlin.math.sqrt(sensor.width * sensor.width + sensor.height * sensor.height)
+    return if (diag > 0) (focal * 43.27f / diag).toInt() else 0
   }
 
   private fun rawSize(chars: CameraCharacteristics): Size? {
@@ -124,6 +176,7 @@ class CameraScanner(private val manager: CameraManager) {
         m == null -> ""
         m.isIdentity() -> "  ⚠ единичная"
         name.startsWith("Forward") && ColorPipelineResolver.looksLikePlaceholderForwardMatrix(m) -> "  ⚠ похоже на заглушку sRGB"
+        name.startsWith("ColorMatrix") && ColorPipelineResolver.looksLikePlaceholderColorMatrix(m) -> "  ⚠ заглушка: сенсор = sRGB"
         else -> ""
       }
       line("$name: ${m ?: "нет"}$flag")

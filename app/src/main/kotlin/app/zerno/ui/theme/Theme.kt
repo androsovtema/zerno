@@ -1,65 +1,37 @@
-/*
- * Copyright 2026 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package app.zerno.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 
-private val DarkColorScheme = darkColorScheme(
-    primary = primaryDark,
-    primaryContainer = primaryContainerDark,
-    secondary = secondaryDark,
-    tertiary = tertiaryDark
-)
+/** Камере нужна тёмная тема всегда: светлый интерфейс мешает оценивать снимок. */
+val Amber = Color(0xFFFFB74D)
+val Ink = Color(0xFF0B0B0C)
+val Graphite = Color(0xFF1C1C1F)
+val Muted = Color(0xFF8E8E93)
 
-private val LightColorScheme = lightColorScheme(
-    primary = primaryLight,
-    primaryContainer = primaryContainerLight,
-    secondary = secondaryLight,
-    tertiary = tertiaryLight
+private val Scheme = darkColorScheme(
+  primary = Amber,
+  onPrimary = Color(0xFF2B1700),
+  primaryContainer = Color(0xFF4A3000),
+  onPrimaryContainer = Color(0xFFFFDDB3),
+  secondary = Color(0xFFD6C4AE),
+  // Выбранные чипы и неактивная часть слайдера — в тёплой гамме, а не фиолетовые по умолчанию.
+  secondaryContainer = Color(0xFF4A3000),
+  onSecondaryContainer = Color(0xFFFFDDB3),
+  background = Ink,
+  onBackground = Color(0xFFF2F2F2),
+  surface = Ink,
+  onSurface = Color(0xFFF2F2F2),
+  surfaceVariant = Graphite,
+  onSurfaceVariant = Color(0xFFC7C7CC),
+  surfaceContainer = Graphite,
+  surfaceContainerHigh = Color(0xFF26262A),
+  outline = Color(0xFF48484A),
 )
 
 @Composable
-fun ZernoTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = false,
-    content: @Composable () -> Unit
-) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+fun ZernoTheme(content: @Composable () -> Unit) {
+  MaterialTheme(colorScheme = Scheme, typography = Typography, content = content)
 }
-

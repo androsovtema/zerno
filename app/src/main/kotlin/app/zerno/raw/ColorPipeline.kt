@@ -46,6 +46,7 @@ enum class ColorStrategy(val title: String) {
   AUTO("Авто"),
   SENSOR_MATRIX("Матрица сенсора"),
   ISP_MATRIX("Матрица ISP"),
+  GENERIC("Типовая матрица"),
   NO_MATRIX("Без матрицы"),
 }
 
@@ -72,13 +73,11 @@ object ColorPipelineResolver {
       ColorStrategy.AUTO -> when {
         sensorMatrix != null -> ColorStrategy.SENSOR_MATRIX
         ispMatrix != null -> ColorStrategy.ISP_MATRIX
-        else -> ColorStrategy.NO_MATRIX
+        else -> ColorStrategy.GENERIC
       }
-      ColorStrategy.SENSOR_MATRIX ->
-        if (sensorMatrix != null) requested else fallback(requested, ispMatrix, ColorStrategy.ISP_MATRIX, notes)
-      ColorStrategy.ISP_MATRIX ->
-        if (ispMatrix != null) requested else fallback(requested, sensorMatrix, ColorStrategy.SENSOR_MATRIX, notes)
-      ColorStrategy.NO_MATRIX -> requested
+      ColorStrategy.SENSOR_MATRIX -> if (sensorMatrix != null) requested else fallback(requested, notes)
+      ColorStrategy.ISP_MATRIX -> if (ispMatrix != null) requested else fallback(requested, notes)
+      ColorStrategy.GENERIC, ColorStrategy.NO_MATRIX -> requested
     }
 
     val neutralGains = meta.neutral?.let { n ->
@@ -92,6 +91,7 @@ object ColorPipelineResolver {
     val matrix = when (strategy) {
       ColorStrategy.SENSOR_MATRIX -> sensorMatrix!!
       ColorStrategy.ISP_MATRIX -> ispMatrix!!
+      ColorStrategy.GENERIC -> GENERIC_PHONE
       else -> Mat3.IDENTITY
     }
     return ColorPipeline(normalizeGains(rawGains), matrix, strategy, notes)
@@ -107,6 +107,12 @@ object ColorPipelineResolver {
     notes += "Калибровка сенсора: ${Illuminant.name(cal.illuminant)}"
     val camFromXyz = cal.calibration?.let { it * cal.colorMatrix } ?: cal.colorMatrix
     val camFromSrgb = (camFromXyz * Mat3.XYZ_FROM_SRGB).normalizeRows()
+    if (looksLikePlaceholderColorMatrix(camFromXyz)) {
+      // Так пишут OnePlus/Xiaomi/Oppo: ColorMatrix = XYZ→sRGB, т. е. «сенсор видит как sRGB».
+      // Это не калибровка, а заглушка: цвета с ней блёклые. Не используем.
+      notes += "Калибровка сенсора — заглушка (сенсор = sRGB), не используем"
+      return null
+    }
     val result = camFromSrgb?.inverse()
     if (result == null) notes += "Матрица сенсора вырождена — пропускаем"
     return result
@@ -120,18 +126,28 @@ object ColorPipelineResolver {
       ?: usable.lastOrNull()
   }
 
+  /** ColorMatrix, который на деле означает «сенсор = sRGB» (заглушка OnePlus/Xiaomi/Oppo). */
+  fun looksLikePlaceholderColorMatrix(colorMatrix: Mat3): Boolean =
+    (colorMatrix * Mat3.XYZ_FROM_SRGB).normalizeRows()?.isIdentity(0.03) == true
+
   /** Совпадает ли ForwardMatrix с типичной заглушкой sRGB→XYZ(D50). */
   fun looksLikePlaceholderForwardMatrix(m: Mat3): Boolean = m.maxAbsDiff(Mat3.XYZ_D50_FROM_SRGB) < 0.01
 
-  private fun fallback(
-    requested: ColorStrategy,
-    alternative: Mat3?,
-    alternativeStrategy: ColorStrategy,
-    notes: MutableList<String>,
-  ): ColorStrategy {
-    notes += "«${requested.title}» недоступна для этого кадра"
-    return if (alternative != null) alternativeStrategy else ColorStrategy.NO_MATRIX
+  private fun fallback(requested: ColorStrategy, notes: MutableList<String>): ColorStrategy {
+    notes += "«${requested.title}» недоступна для этого кадра — типовая матрица"
+    return ColorStrategy.GENERIC
   }
+
+  /**
+   * Типовая матрица «сенсор смартфона → sRGB» при дневном свете — когда устройство не дало
+   * настоящей калибровки. Наша оценка порядка величин для CMOS-сенсоров телефонов; строки
+   * в сумме дают 1, поэтому белый остаётся белым. Уточнять по снимкам цветовой мишени.
+   */
+  val GENERIC_PHONE = Mat3(doubleArrayOf(
+    1.70, -0.55, -0.15,
+    -0.28, 1.52, -0.24,
+    0.02, -0.62, 1.60,
+  ))
 
   private fun normalizeGains(g: DoubleArray): DoubleArray {
     val min = g.min()
