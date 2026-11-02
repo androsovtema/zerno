@@ -15,6 +15,17 @@ android {
     versionName = "0.2.0"
   }
 
+  // Общий отладочный ключ в репозитории: сборки из CI и любой облачной сессии ставятся поверх друг друга.
+  // Ключ не секретный и годится только для тестовых сборок, не для Google Play.
+  signingConfigs {
+    getByName("debug") {
+      storeFile = file("debug.keystore")
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
+    }
+  }
+
   buildTypes {
     release {
       isMinifyEnabled = false
