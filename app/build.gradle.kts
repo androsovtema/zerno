@@ -9,7 +9,7 @@ android {
   compileSdk = 37
   defaultConfig {
     applicationId = "app.zerno"
-    minSdk = 24
+    minSdk = 29
     targetSdk = 37
     versionCode = 1
     versionName = "1.0"
