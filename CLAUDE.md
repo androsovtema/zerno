@@ -21,9 +21,11 @@ APK последней сборки `main` (для установки на те�
 - `app/src/main/kotlin/app/zerno/camera/` — Camera2: сканер камер, RAW-съёмка, перевод метаданных в типы `raw`, сохранение в MediaStore
 - `app/src/main/kotlin/app/zerno/ui/` — Compose-экраны (камера, редактор, галерея, настройки) и `ZernoViewModel`;
   экраны разделены на `*Screen` (ViewModel) и `*Content` (вёрстка от состояния, для скриншотов).
-  `Brand.kt` — общие компоненты (логотип, лента профилей, затвор, шкала экспозиции, кнопки);
-  `theme/` — палитра «проявочной», шрифты Prata + IBM Plex Mono, зерно интерфейса (`Grain.kt`)
-- `tools/brand/make_icons.py` — генерирует иконку и знак (нужны numpy и Pillow); `docs/brand/` — превью иконки
+  `Brand.kt` — общие компоненты (логотип, профили, спуск, шкала экспозиции, кнопки, карточки настроек);
+  `theme/` — палитра и шрифты (Onest, Unbounded только для логотипа). Интерфейс чистый, без зерна и текстур:
+  зерно — в снимках и в знаке (решение пользователя, см. `docs/HISTORY.md` §10)
+- `tools/brand/make_icons.py` — генерирует знак и иконку (камера из рассыпанных точек; нужны numpy и Pillow);
+  `docs/brand/` — превью иконки
 - `app/src/main/kotlin/app/zerno/` — `ZernoApp` (журнал, перехват падений), `Prefs`, `ShotRepository`
 - `docs/research/` — исследования (Lampa, особенности устройств)
 - `app/src/test/` — юнит-тесты (JVM), `app/src/androidTest/` — инструментальные (нужен девайс/эмулятор, в облаке не запускаются)

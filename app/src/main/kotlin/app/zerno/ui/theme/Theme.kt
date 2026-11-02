@@ -6,65 +6,60 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /*
- * Палитра «проявочной»: тёплый почти чёрный, кремовая бумага, янтарь надписей на краю плёнки.
+ * Чистая тёмная тема: чёрный фон, серые карточки, белый текст и один акцент из знака.
+ * В интерфейсе нет ни зерна, ни текстур: зерно — в снимках, и на чистом фоне его лучше видно.
  * Камере нужна тёмная тема всегда: светлый интерфейс мешает оценивать снимок.
  */
 
-/** Основной фон (совпадает с @color/zerno_ink — окно и заставка). */
-val Ink = Color(0xFF15100D)
+/** Фон (совпадает с @color/zerno_ink — окно и заставка). */
+val Bg = Color(0xFF000000)
 
-/** Низ фонового градиента. */
-val InkDeep = Color(0xFF0D0A08)
+/** Карточки, листы. */
+val Panel = Color(0xFF1C1C1E)
 
-/** Верх фонового градиента — тёплый отсвет. */
-val Umber = Color(0xFF261B14)
+/** Кнопки и элементы на карточках. */
+val SurfaceHigh = Color(0xFF2C2C2E)
 
-/** Подложка плёнки (лента профилей, контактный лист). */
-val FilmBase = Color(0xFF0B0807)
+/** Разделители в списках. */
+val Stroke = Color(0xFF38383A)
 
-/** Панели и карточки. */
-val Panel = Color(0xFF1F1712)
-val PanelHigh = Color(0xFF2A1F18)
-
-/** Волосяные линии и рамки. */
-val Hairline = Color(0xFF3D2F25)
-
-/** Текст — цвет фотобумаги. */
-val Cream = Color(0xFFF3E6D0)
+/** Основной текст. */
+val OnBg = Color(0xFFF5F5F7)
 
 /** Второстепенный текст. */
-val Muted = Color(0xFF9C8B7A)
+val Muted = Color(0xFF8E8E93)
 
-/** Акцент — как надписи на краю плёнки. */
-val Amber = Color(0xFFFFB061)
+/** Акцент — киноварь из знака: выбранные элементы, переключатели. */
+val Accent = Color(0xFFFF6A3D)
 
-/** Тёплый конец градиента знака. */
-val Ember = Color(0xFFE0683A)
+/** Цвета градиента знака (только для логотипа). */
+val SigAmber = Color(0xFFFFC454)
+val SigVermilion = Color(0xFFFF5C30)
+val SigMagenta = Color(0xFFEC2A70)
 
-/** Красный фонарь проявочной — для ошибок и удаления. */
-val Safelight = Color(0xFFD9573F)
+/** Ошибки и удаление. */
+val Danger = Color(0xFFFF453A)
 
 private val Scheme = darkColorScheme(
-  primary = Amber,
-  onPrimary = Color(0xFF2B1700),
-  primaryContainer = Color(0xFF4A3000),
-  onPrimaryContainer = Color(0xFFFFDDB3),
-  secondary = Color(0xFFD6C4AE),
-  // Выбранные элементы и неактивная часть слайдера — в тёплой гамме, а не фиолетовые по умолчанию.
-  secondaryContainer = Color(0xFF4A3000),
-  onSecondaryContainer = Color(0xFFFFDDB3),
-  background = Ink,
-  onBackground = Cream,
-  surface = Ink,
-  onSurface = Cream,
+  primary = Accent,
+  onPrimary = Color.White,
+  primaryContainer = Color(0xFF4A1A0E),
+  onPrimaryContainer = Color(0xFFFFDBD0),
+  secondary = Color(0xFFE5E5EA),
+  secondaryContainer = SurfaceHigh,
+  onSecondaryContainer = OnBg,
+  background = Bg,
+  onBackground = OnBg,
+  surface = Bg,
+  onSurface = OnBg,
   surfaceVariant = Panel,
-  onSurfaceVariant = Color(0xFFD2C3B2),
+  onSurfaceVariant = Color(0xFFC7C7CC),
   surfaceContainer = Panel,
-  surfaceContainerHigh = PanelHigh,
-  surfaceContainerHighest = Color(0xFF35281F),
-  outline = Hairline,
-  outlineVariant = Hairline,
-  error = Safelight,
+  surfaceContainerHigh = SurfaceHigh,
+  surfaceContainerHighest = Color(0xFF3A3A3C),
+  outline = Stroke,
+  outlineVariant = Stroke,
+  error = Danger,
 )
 
 @Composable

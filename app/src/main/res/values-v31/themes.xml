@@ -6,6 +6,6 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <!-- Заставка Android 12+: зерно на фоне цвета приложения. -->
         <item name="android:windowSplashScreenBackground">@color/zerno_ink</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
     </style>
 </resources>

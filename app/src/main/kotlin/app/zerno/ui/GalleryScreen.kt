@@ -7,8 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +17,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,20 +26,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.zerno.ShotEntry
 import app.zerno.ShotRepository
-import app.zerno.ui.theme.Cream
+import app.zerno.ui.theme.Bg
 import app.zerno.ui.theme.Muted
+import app.zerno.ui.theme.OnBg
 import app.zerno.ui.theme.Panel
-import app.zerno.ui.theme.zernoBackground
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -51,7 +48,7 @@ fun GalleryScreen(vm: ZernoViewModel, onOpen: (String) -> Unit, onBack: () -> Un
   GalleryContent(state.gallery, vm::loadThumb, onOpen, onBack)
 }
 
-/** «Плёнка»: снимки контактным листом, с номерами кадров на краю. */
+/** Галерея: сетка снимков, как в «Фото». */
 @Composable
 fun GalleryContent(
   gallery: List<ShotEntry>,
@@ -59,36 +56,36 @@ fun GalleryContent(
   onOpen: (String) -> Unit,
   onBack: () -> Unit,
 ) {
-  Column(Modifier.fillMaxSize().zernoBackground().safeDrawingPadding()) {
-    ScreenBar(title = "Плёнка", onBack = onBack, backLabel = "Камера") {
-      if (gallery.isNotEmpty()) EdgeText(framesLabel(gallery.size), color = Muted, modifier = Modifier.padding(end = 12.dp))
+  Column(Modifier.fillMaxSize().background(Bg).safeDrawingPadding()) {
+    ScreenHeader(title = "Снимки", onBack = onBack) {
+      if (gallery.isNotEmpty()) {
+        Text(framesLabel(gallery.size), style = MaterialTheme.typography.labelMedium, color = Muted, modifier = Modifier.padding(end = 6.dp))
+      }
     }
     if (gallery.isEmpty()) {
       Column(
         Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
       ) {
-        ZernoMark(56.dp, Modifier.alpha(0.8f))
-        Spacer(Modifier.height(16.dp))
-        Text("Плёнка пока пустая", style = MaterialTheme.typography.titleLarge, color = Cream)
+        ZernoMark(44.dp)
+        Spacer(Modifier.height(20.dp))
+        Text("Пока пусто", style = MaterialTheme.typography.titleLarge, color = OnBg)
         Spacer(Modifier.height(8.dp))
-        Text("Каждый снимок попадёт сюда, а JPEG — в галерею телефона, в папку Zerno.",
-          color = Muted, textAlign = TextAlign.Center)
+        Text("Снимки появятся здесь, а JPEG — в галерее телефона, в папке Zerno.",
+          style = MaterialTheme.typography.bodyMedium, color = Muted, textAlign = TextAlign.Center)
       }
     } else {
       LazyVerticalGrid(
         columns = GridCells.Fixed(3),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
       ) {
-        itemsIndexed(gallery, key = { _, e -> e.name }) { index, entry ->
-          Frame(entry, number = gallery.size - index, loadThumb, onOpen)
-        }
+        items(gallery, key = { it.name }) { entry -> Cell(entry, loadThumb, onOpen) }
         item(span = { GridItemSpan(maxLineSpan) }) {
           Text(
-            "Перепроявить можно последние ${ShotRepository.MAX_SHOTS} кадров, пока хватает места.",
-            color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 16.dp),
+            "Перепроявить можно последние ${ShotRepository.MAX_SHOTS} снимков, пока хватает места.",
+            style = MaterialTheme.typography.bodySmall, color = Muted, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(vertical = 20.dp, horizontal = 16.dp),
           )
         }
       }
@@ -97,15 +94,19 @@ fun GalleryContent(
 }
 
 @Composable
-private fun Frame(entry: ShotEntry, number: Int, loadThumb: (ShotEntry) -> Bitmap?, onOpen: (String) -> Unit) {
+private fun Cell(entry: ShotEntry, loadThumb: (ShotEntry) -> Bitmap?, onOpen: (String) -> Unit) {
   val bmp by produceState<Bitmap?>(null, entry.name) { value = withContext(Dispatchers.IO) { loadThumb(entry) } }
-  Column(Modifier.clip(RoundedCornerShape(4.dp)).clickable(enabled = entry.canRedevelop) { onOpen(entry.name) }) {
-    Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(3.dp)).background(Panel)) {
-      bmp?.let { Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
-    }
-    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-      EdgeText("%02d".format(number), size = 9.sp)
-      if (!entry.canRedevelop) EdgeText("  только JPEG", color = Muted, size = 8.sp, spacing = 0.4.sp)
+  Box(
+    Modifier.fillMaxWidth().aspectRatio(1f).background(Panel)
+      .clickable(enabled = entry.canRedevelop) { onOpen(entry.name) },
+  ) {
+    bmp?.let { Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+    if (!entry.canRedevelop) {
+      Text(
+        "JPEG", style = MaterialTheme.typography.labelSmall, color = OnBg,
+        modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).clip(RoundedCornerShape(6.dp))
+          .background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 6.dp, vertical = 2.dp),
+      )
     }
   }
 }
