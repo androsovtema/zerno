@@ -195,6 +195,48 @@ class RawDeveloperTest {
     assertEquals(ColorStrategy.GENERIC, p.used)
   }
 
+  // Матрицы из «Диагностики камер» Oppo Find X9 Ultra (CPH2841, Android 17), модуль 3× (камера 4).
+  private val oppoTeleD65 = Mat3(doubleArrayOf(0.6956, -0.1730, -0.0533, -0.5003, 1.3221, 0.1385, -0.1352, 0.2733, 0.4148))
+  private val oppoTeleA = Mat3(doubleArrayOf(0.9169, -0.2890, 0.0128, -0.5143, 1.4870, 0.2539, -0.0786, 0.2321, 0.5844))
+  private val oppoTele = listOf(
+    SensorCalibration(Illuminant.D65, oppoTeleD65, null, null),
+    SensorCalibration(Illuminant.STANDARD_A, oppoTeleA, null, null),
+  )
+
+  private fun neutralOf(cm: Mat3, whiteXyz: DoubleArray): DoubleArray {
+    val cam = cm.apply(whiteXyz)
+    return DoubleArray(3) { cam[it] / cam[1] }
+  }
+
+  @Test
+  fun calibrationBlend_followsSceneTemperature() {
+    val underA = ColorPipelineResolver.blendForNeutral(oppoTele, neutralOf(oppoTeleA, doubleArrayOf(1.0985, 1.0, 0.3558)))!!
+    assertEquals(2856.0, underA.temperature, 60.0)
+    assertEquals(0.0, underA.weight, 0.03)
+    val underD65 = ColorPipelineResolver.blendForNeutral(oppoTele, neutralOf(oppoTeleD65, doubleArrayOf(0.9505, 1.0, 1.0890)))!!
+    assertEquals(6504.0, underD65.temperature, 150.0)
+    assertEquals(1.0, underD65.weight, 0.03)
+    assertEquals(Illuminant.D65, underD65.first.illuminant)
+  }
+
+  @Test
+  fun oppoTele_usesBlendedSensorMatrix_andKeepsWhite() {
+    val p = ColorPipelineResolver.resolve(meta(neutralOf(oppoTeleA, doubleArrayOf(1.0985, 1.0, 0.3558)), cal = oppoTele), ColorStrategy.AUTO)
+    assertEquals(ColorStrategy.SENSOR_MATRIX, p.used)
+    assertNotNull(p.sceneTemperature)
+    p.srgbFromCamera.apply(doubleArrayOf(1.0, 1.0, 1.0)).forEach { assertEquals(1.0, it, 1e-9) }
+  }
+
+  @Test
+  fun oppoLogicalMainCamera_placeholderInOnePair_rejectsBoth() {
+    // Логическая камера 0: ColorMatrix1 — заглушка sRGB, ColorMatrix2 — бессмыслица. Брать нельзя ни одну.
+    val cm1 = Mat3(doubleArrayOf(1.3203, -0.6250, -0.2031, -0.9688, 1.8750, 0.0391, 0.0391, -0.1328, 0.6875))
+    val cm2 = Mat3(doubleArrayOf(2.0625, -1.4297, -0.3594, -1.0703, 2.1797, -0.0078, 0.0547, -0.1328, 1.2188))
+    val cal = listOf(SensorCalibration(Illuminant.D65, cm1, null, null), SensorCalibration(Illuminant.STANDARD_A, cm2, null, null))
+    val p = ColorPipelineResolver.resolve(meta(doubleArrayOf(0.5, 1.0, 0.6), cal = cal), ColorStrategy.AUTO)
+    assertEquals(ColorStrategy.GENERIC, p.used)
+  }
+
   @Test
   fun genericMatrix_keepsWhite() {
     ColorPipelineResolver.GENERIC_PHONE.apply(doubleArrayOf(1.0, 1.0, 1.0)).forEach { assertEquals(1.0, it, 1e-9) }

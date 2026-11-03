@@ -1,7 +1,6 @@
 package app.zerno.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,11 +12,8 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,76 +24,95 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.zerno.appVersion
+import app.zerno.ui.theme.Bg
 import app.zerno.ui.theme.Muted
 
 @Composable
 fun SettingsScreen(vm: ZernoViewModel, onBack: () -> Unit) {
   val state by vm.state.collectAsStateWithLifecycle()
   val context = LocalContext.current
+  SettingsContent(
+    state = state,
+    version = appVersion(context),
+    onBack = onBack,
+    onSaveDng = vm::setSaveDng,
+    onShading = vm::setShading,
+    onSendLog = { share(context, vm.eventLog(), "Журнал Зерна") },
+    onShareReport = { share(context, it, "Отчёт о камерах") },
+    onCopyReport = { copy(context, it) },
+  )
+}
+
+/** Вёрстка настроек без ViewModel — для скриншот-тестов. */
+@Composable
+fun SettingsContent(
+  state: UiState,
+  version: String,
+  onBack: () -> Unit,
+  onSaveDng: (Boolean) -> Unit,
+  onShading: (Boolean) -> Unit,
+  onSendLog: () -> Unit,
+  onShareReport: (String) -> Unit,
+  onCopyReport: (String) -> Unit,
+) {
   var showReport by rememberSaveable { mutableStateOf(false) }
-
-  Column(Modifier.fillMaxSize().background(Color.Black).safeDrawingPadding()) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-      TextButton(onClick = onBack) { Text("← Камера", color = Color.White) }
-    }
+  Column(Modifier.fillMaxSize().background(Bg).safeDrawingPadding()) {
+    ScreenHeader(title = "Настройки", onBack = onBack)
     Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-      ToggleRow(
-        "Сохранять DNG",
-        "Дублировать каждый кадр файлом RAW в галерее — для Lightroom и сравнения. Файлы большие.",
-        state.saveDng, vm::setSaveDng,
-      )
-      ToggleRow(
-        "Коррекция виньетирования",
-        "Выравнивает яркость и цвет по краям кадра по данным объектива.",
-        state.shadingCorrection, vm::setShading,
-      )
-      HorizontalDivider(Modifier.padding(vertical = 12.dp))
+      SectionHeader("Съёмка")
+      GroupCard {
+        GroupRow("Сохранять DNG", "Каждый кадр ещё и файлом RAW — для Lightroom. Файлы большие.") {
+          ZernoSwitch(state.saveDng, onSaveDng)
+        }
+        GroupDivider()
+        GroupRow("Коррекция виньетирования", "Выравнивает яркость и цвет по краям кадра.") {
+          ZernoSwitch(state.shadingCorrection, onShading)
+        }
+      }
 
-      SectionTitle("Для тестирования")
-      Text("Если что-то работает не так — отправьте журнал или отчёт о камерах разработчику.",
-        color = Muted, fontSize = 13.sp)
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-        OutlinedButton(onClick = { share(context, vm.eventLog(), "Журнал Zerno") }) { Text("Отправить журнал") }
-        OutlinedButton(onClick = { showReport = !showReport }) { Text("Диагностика камер") }
+      SectionHeader("Помощь разработчику")
+      GroupCard {
+        GroupRow("Отправить журнал", onClick = onSendLog) { ChevronIcon() }
+        GroupDivider()
+        GroupRow("Диагностика камер", onClick = { showReport = !showReport }) { ChevronIcon(down = showReport) }
       }
       val report = state.scan?.report
       if (showReport) {
         if (report == null) {
-          Text("Опрос камер ещё идёт…", color = Muted)
+          Text("Опрос камер ещё идёт…", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.padding(16.dp))
         } else {
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { share(context, report, "Отчёт о камерах") }) { Text("Отправить") }
-            TextButton(onClick = { copy(context, report) }) { Text("Копировать") }
+          Row(Modifier.padding(top = 8.dp)) {
+            TextAction("Отправить", { onShareReport(report) })
+            TextAction("Копировать", { onCopyReport(report) })
           }
           SelectionContainer {
-            Text(report, fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp, color = Color(0xFFC7C7CC))
+            Text(report, fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp, color = Color(0xFFC7C7CC),
+              modifier = Modifier.padding(horizontal = 4.dp))
           }
         }
       }
-      HorizontalDivider(Modifier.padding(vertical = 12.dp))
-      SectionTitle("О приложении")
-      Text(
-        "Zerno ${appVersion(context)} — камера, которая снимает RAW и проявляет его своими профилями, " +
-          "без HDR и «улучшений» ИИ. Профиль выбирается перед съёмкой; любой из последних кадров можно " +
-          "перепроявить другим профилем: нажмите на миниатюру.",
-        color = Muted, fontSize = 13.sp,
-      )
-      Spacer(Modifier.height(32.dp))
-    }
-  }
-}
 
-@Composable
-private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-  Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 10.dp)) {
-    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-      Text(title, color = Color.White)
-      Text(subtitle, color = Muted, fontSize = 12.sp)
+      Spacer(Modifier.height(24.dp))
+      GroupCard {
+        Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+          ZernoLogo(markHeight = 44.dp, textSize = 30.sp)
+          Text(
+            "Снимает RAW и проявляет своими профилями — без HDR и «улучшений» ИИ.",
+            style = MaterialTheme.typography.bodyMedium, color = Muted, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 16.dp),
+          )
+        }
+      }
+      Text(
+        "Версия $version · шрифты Onest и Unbounded (SIL OFL 1.1)",
+        style = MaterialTheme.typography.bodySmall, color = Muted, textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 32.dp),
+      )
     }
-    Switch(checked = checked, onCheckedChange = onChange)
   }
 }

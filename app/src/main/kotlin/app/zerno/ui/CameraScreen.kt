@@ -13,15 +13,10 @@ import android.view.TextureView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,15 +30,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,13 +49,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,8 +66,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.zerno.camera.CameraOption
 import app.zerno.raw.Profile
-import app.zerno.ui.theme.Amber
+import app.zerno.ui.theme.Accent
+import app.zerno.ui.theme.Bg
 import app.zerno.ui.theme.Muted
+import app.zerno.ui.theme.OnBg
+import app.zerno.ui.theme.Panel
+import app.zerno.ui.theme.SurfaceHigh
 
 @Composable
 fun CameraScreen(
@@ -129,6 +125,7 @@ fun CameraScreen(
     onOpenShot = onOpenShot,
     onSelect = vm::select,
     onProfile = vm::selectProfile,
+    onToggleDng = vm::setSaveDng,
     onShutter = {
       view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
       vm.capture()
@@ -140,111 +137,120 @@ fun CameraScreen(
 }
 
 /** Вёрстка экрана камеры без ViewModel — так её можно показать в превью и скриншот-тестах. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CameraContent(
   state: UiState,
   granted: Boolean,
   asked: Boolean,
   flashAlpha: Float,
-  onRequestPermission: () -> Unit,
-  onOpenAppSettings: () -> Unit,
-  onSettings: () -> Unit,
-  onGallery: () -> Unit,
-  onOpenShot: (String) -> Unit,
-  onSelect: (CameraOption) -> Unit,
-  onProfile: (Profile) -> Unit,
-  onShutter: () -> Unit,
-  onDismissMessage: () -> Unit,
-  onDismissTip: () -> Unit,
+  onRequestPermission: () -> Unit = {},
+  onOpenAppSettings: () -> Unit = {},
+  onSettings: () -> Unit = {},
+  onGallery: () -> Unit = {},
+  onOpenShot: (String) -> Unit = {},
+  onSelect: (CameraOption) -> Unit = {},
+  onProfile: (Profile) -> Unit = {},
+  onToggleDng: (Boolean) -> Unit = {},
+  onShutter: () -> Unit = {},
+  onDismissMessage: () -> Unit = {},
+  onDismissTip: () -> Unit = {},
   preview: @Composable (CameraOption) -> Unit,
 ) {
-  Column(Modifier.fillMaxSize().background(Color.Black).safeDrawingPadding()) {
-    // Верхняя панель
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-      Text("ZERNO", color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 3.sp, fontSize = 15.sp)
-      Spacer(Modifier.width(10.dp))
+  var showProfiles by rememberSaveable { mutableStateOf(false) }
+  val noRaw = granted && state.scan != null && state.selected == null
+
+  Column(Modifier.fillMaxSize().background(Bg).safeDrawingPadding()) {
+    // Верх: настройки, состояние проявки, DNG
+    Box(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 12.dp)) {
+      CircleButton(onSettings, "Настройки", Modifier.align(Alignment.CenterStart)) { TuneIcon() }
       if (state.processing > 0) {
-        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Amber)
-        Text("  проявляю ${state.processing}", color = Muted, fontSize = 12.sp)
+        Row(
+          Modifier.align(Alignment.Center).clip(RoundedCornerShape(50)).background(SurfaceHigh.copy(alpha = 0.85f))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          CircularProgressIndicator(Modifier.size(12.dp), color = Accent, strokeWidth = 1.5.dp)
+          Spacer(Modifier.width(8.dp))
+          Text("Проявка · ${state.processing}", style = MaterialTheme.typography.labelMedium, color = OnBg)
+        }
       }
-      Spacer(Modifier.weight(1f))
-      TextButton(onClick = onSettings) { Text("Настройки", color = Muted) }
+      if (!noRaw && granted) {
+        Box(
+          Modifier.align(Alignment.CenterEnd).height(36.dp).clip(RoundedCornerShape(50))
+            .background(SurfaceHigh.copy(alpha = 0.85f))
+            .clickable(role = Role.Switch, onClickLabel = "Сохранять DNG") { onToggleDng(!state.saveDng) }
+            .padding(horizontal = 14.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text("DNG", style = MaterialTheme.typography.labelMedium, color = if (state.saveDng) Accent else Muted)
+        }
+      }
     }
 
     // Видоискатель
-    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+    Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
       val selected = state.selected
       when {
         !granted -> PermissionBlock(asked, onRequest = onRequestPermission, onSettings = onOpenAppSettings)
-        state.scan == null -> CircularProgressIndicator(color = Amber)
-        selected == null -> Text(
-          "Этот телефон не отдаёт RAW сторонним приложениям ни с одной камеры.\n\n" +
-            "Откройте «Настройки» → «Диагностика камер» и отправьте отчёт разработчику.",
-          color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.padding(32.dp),
-        )
+        state.scan == null -> CircularProgressIndicator(Modifier.size(28.dp), color = Muted, strokeWidth = 2.dp)
+        selected == null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+          Text("Этот телефон не отдаёт RAW", style = MaterialTheme.typography.titleLarge, color = OnBg, textAlign = TextAlign.Center)
+          Spacer(Modifier.height(10.dp))
+          Text(
+            "Ни одна камера не даёт сторонним приложениям сырые данные. Откройте настройки → " +
+              "«Диагностика камер» и отправьте отчёт разработчику.",
+            style = MaterialTheme.typography.bodyMedium, color = Muted, textAlign = TextAlign.Center,
+          )
+        }
         // key: при смене камеры пересоздаём TextureView, чтобы получить новую поверхность.
         else -> preview(selected)
       }
       Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = flashAlpha)))
+
+      val options = state.scan?.options.orEmpty()
+      Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        state.message?.let { msg ->
+          Text(
+            msg, style = MaterialTheme.typography.bodySmall, color = OnBg,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp).clip(RoundedCornerShape(14.dp))
+              .background(Panel.copy(alpha = 0.92f)).clickable(onClick = onDismissMessage)
+              .padding(horizontal = 14.dp, vertical = 10.dp),
+          )
+        }
+        if (granted && options.size > 1) LensSelector(options, state.selected, onSelect)
+      }
+
       if (state.showTip && state.selected != null && granted) {
         Column(
-          Modifier.align(Alignment.TopCenter).padding(12.dp)
-            .background(Color(0xE61C1C1F), RoundedCornerShape(12.dp)).padding(14.dp),
+          Modifier.align(Alignment.TopCenter).padding(12.dp).clip(RoundedCornerShape(20.dp))
+            .background(Panel.copy(alpha = 0.95f)).padding(start = 18.dp, end = 6.dp, top = 16.dp, bottom = 4.dp),
         ) {
-          Text("Как пользоваться", color = Amber, fontWeight = FontWeight.SemiBold)
+          Text("Как снимать", style = MaterialTheme.typography.titleMedium, color = OnBg)
           Text(
-            "• Внизу выберите профиль — он применится к следующим снимкам.\n" +
-              "• Нажмите на миниатюру, чтобы перепроявить кадр другим профилем.\n" +
-              "• Видоискатель показывает сцену без профиля — итог будет мягче и натуральнее.",
-            color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+            "Профиль справа от спуска — стиль проявки следующих снимков.\n" +
+              "Миниатюра слева — открыть снимок и перепроявить другим профилем.\n" +
+              "Видоискатель показывает сцену без профиля.",
+            style = MaterialTheme.typography.bodySmall, color = Color(0xFFC7C7CC),
+            modifier = Modifier.padding(top = 6.dp, end = 12.dp),
           )
-          TextButton(onClick = onDismissTip, modifier = Modifier.align(Alignment.End)) { Text("Понятно") }
+          TextAction("Понятно", onDismissTip, Modifier.align(Alignment.End))
         }
       }
-      state.message?.let { msg ->
-        Text(
-          msg, color = Color.White, fontSize = 13.sp,
-          modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp)
-            .background(Color(0xCC2B1700), RoundedCornerShape(10.dp))
-            .clickable(onClick = onDismissMessage).padding(horizontal = 12.dp, vertical = 8.dp),
-        )
-      }
     }
 
-    // Объективы
-    val options = state.scan?.options.orEmpty()
-    if (options.size > 1) {
-      Row(
-        Modifier.fillMaxWidth().padding(top = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-      ) {
-        options.forEach { o -> LensButton(o.zoomLabel, o == state.selected) { onSelect(o) } }
-      }
-    }
+    if (noRaw) return@Column
 
-    // Профили
+    // Низ: последний снимок, спуск, профиль
     Row(
-      Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-      horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
-    ) {
-      Profile.entries.forEach { p ->
-        val sel = p == state.profile
-        Text(
-          p.title.uppercase(), fontSize = 11.sp, letterSpacing = 0.5.sp, maxLines = 1,
-          fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-          color = if (sel) Amber else Muted,
-          modifier = Modifier.clickable { onProfile(p) }.padding(vertical = 6.dp),
-        )
-      }
-    }
-
-    // Нижняя панель: миниатюра, спуск, галерея
-    Row(
-      Modifier.fillMaxWidth().height(110.dp).padding(horizontal = 28.dp),
+      Modifier.fillMaxWidth().height(112.dp).padding(horizontal = 30.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF1C1C1F))
-        .clickable { state.lastShotName?.let(onOpenShot) ?: onGallery() }) {
+      val thumbShape = RoundedCornerShape(14.dp)
+      Box(
+        Modifier.size(54.dp).clip(thumbShape).background(SurfaceHigh)
+          .clickable(role = Role.Button, onClickLabel = "Открыть снимок") { state.lastShotName?.let(onOpenShot) ?: onGallery() },
+      ) {
         state.lastThumb?.let {
           Image(it.asImageBitmap(), "Последний снимок", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
@@ -253,51 +259,67 @@ fun CameraContent(
       val enabled = granted && state.selected != null && !state.capturing && state.processing < 2
       ShutterButton(enabled = enabled, busy = state.capturing, onClick = onShutter)
       Spacer(Modifier.weight(1f))
-      Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
-        TextButton(onClick = onGallery) { Text("Все", color = Muted) }
+      ProfilePreview(
+        state.profile, state.profilePreviews[state.profile], selected = false,
+        modifier = Modifier.size(54.dp).clickable(role = Role.Button, onClickLabel = "Выбрать профиль") { showProfiles = true },
+      )
+    }
+    Text(
+      state.profile.title, style = MaterialTheme.typography.labelMedium, color = Accent, textAlign = TextAlign.Center,
+      modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { showProfiles = true }.padding(top = 2.dp, bottom = 14.dp),
+    )
+  }
+
+  if (showProfiles) {
+    ModalBottomSheet(onDismissRequest = { showProfiles = false }, containerColor = Panel) {
+      ProfileSheetContent(state.profile, state.profilePreviews) { p ->
+        onProfile(p)
+        showProfiles = false
+      }
+    }
+  }
+}
+
+/** Объективы — поверх видоискателя; у выбранного акцентный цвет и «×». */
+@Composable
+private fun LensSelector(options: List<CameraOption>, selected: CameraOption?, onSelect: (CameraOption) -> Unit) {
+  Row(
+    Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.35f)).padding(4.dp),
+    horizontalArrangement = Arrangement.spacedBy(2.dp),
+  ) {
+    options.forEach { o ->
+      val sel = o == selected
+      Box(
+        Modifier.height(40.dp).widthIn(min = 40.dp).clip(RoundedCornerShape(50))
+          .then(if (sel) Modifier.background(Color.Black.copy(alpha = 0.55f)) else Modifier)
+          .clickable(role = Role.RadioButton, onClick = { onSelect(o) }).padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          if (sel) o.zoomLabel else o.zoomLabel.removeSuffix("×"),
+          style = MaterialTheme.typography.labelMedium, color = if (sel) Accent else OnBg, maxLines = 1,
+        )
       }
     }
   }
 }
 
 @Composable
-private fun LensButton(label: String, selected: Boolean, onClick: () -> Unit) {
-  Box(
-    Modifier.size(44.dp).clip(CircleShape)
-      .background(if (selected) Color(0xFF2C2C2E) else Color(0x661C1C1F))
-      .clickable(onClick = onClick),
-    contentAlignment = Alignment.Center,
-  ) {
-    Text(label, color = if (selected) Amber else Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-  }
-}
-
-@Composable
-private fun ShutterButton(enabled: Boolean, busy: Boolean, onClick: () -> Unit) {
-  val interaction = remember { MutableInteractionSource() }
-  val pressed by interaction.collectIsPressedAsState()
-  val scale by animateFloatAsState(if (pressed) 0.9f else 1f, label = "shutter")
-  Box(
-    Modifier.size(78.dp).scale(scale).border(4.dp, if (enabled) Color.White else Color.DarkGray, CircleShape).padding(7.dp)
-      .clip(CircleShape).background(if (enabled) Color.White else Color.DarkGray)
-      .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
-    contentAlignment = Alignment.Center,
-  ) {
-    if (busy) CircularProgressIndicator(Modifier.size(28.dp), color = Color.Black, strokeWidth = 3.dp)
-  }
-}
-
-@Composable
 private fun PermissionBlock(asked: Boolean, onRequest: () -> Unit, onSettings: () -> Unit) {
   Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
-    Text("Zerno нужен доступ к камере, чтобы снимать RAW.", color = Color.White, textAlign = TextAlign.Center)
-    Spacer(Modifier.height(16.dp))
-    Button(onClick = onRequest) { Text("Разрешить камеру") }
+    ZernoLogo(markHeight = 50.dp, textSize = 34.sp)
+    Spacer(Modifier.height(28.dp))
+    Text("Нужен доступ к камере", style = MaterialTheme.typography.titleLarge, color = OnBg)
+    Spacer(Modifier.height(8.dp))
+    Text("Зерно снимает RAW и проявляет его само, без HDR и ИИ.",
+      style = MaterialTheme.typography.bodyMedium, color = Muted, textAlign = TextAlign.Center)
+    Spacer(Modifier.height(24.dp))
+    PrimaryButton("Разрешить камеру", onRequest)
     if (asked) {
-      Spacer(Modifier.height(8.dp))
-      OutlinedButton(onClick = onSettings) { Text("Открыть настройки телефона") }
-      Text("Если запрос не появляется — включите доступ в настройках.", color = Muted, fontSize = 12.sp,
-        textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+      Spacer(Modifier.height(10.dp))
+      SecondaryButton("Открыть настройки телефона", onSettings)
+      Text("Если запрос не появляется — включите доступ в настройках.", style = MaterialTheme.typography.bodySmall,
+        color = Muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
     }
   }
 }
@@ -325,30 +347,27 @@ private fun CameraPreview(vm: ZernoViewModel, option: CameraOption) {
 
   // Сенсор лежит «горизонтально», экран портретный — меняем стороны местами.
   val ratio = minOf(previewSize.width, previewSize.height).toFloat() / maxOf(previewSize.width, previewSize.height)
-  AndroidView(
-    modifier = Modifier.fillMaxWidth().aspectRatio(ratio).clip(RoundedCornerShape(4.dp)),
-    factory = { ctx ->
-      TextureView(ctx).apply {
-        surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-          override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
-            st.setDefaultBufferSize(previewSize.width, previewSize.height)
-            surface = Surface(st)
+  Box(Modifier.fillMaxWidth().aspectRatio(ratio).clip(RoundedCornerShape(20.dp))) {
+    AndroidView(
+      modifier = Modifier.fillMaxSize(),
+      factory = { ctx ->
+        TextureView(ctx).apply {
+          surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
+              st.setDefaultBufferSize(previewSize.width, previewSize.height)
+              surface = Surface(st)
+            }
+            override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) = Unit
+            override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+              vm.closeCamera()
+              surface?.release()
+              surface = null
+              return true
+            }
+            override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
           }
-          override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) = Unit
-          override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-            vm.closeCamera()
-            surface?.release()
-            surface = null
-            return true
-          }
-          override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
         }
-      }
-    },
-  )
-}
-
-@Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-  Text(text, style = MaterialTheme.typography.titleSmall, color = Muted, modifier = modifier.padding(top = 16.dp, bottom = 6.dp))
+      },
+    )
+  }
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Почти чёрный фон: совпадает с Bg в ui/theme/Theme.kt. -->
+    <color name="zerno_ink">#FF000000</color>
+</resources>

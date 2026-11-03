@@ -27,6 +27,7 @@ import app.zerno.raw.Profile
 import app.zerno.raw.RawDeveloper
 import app.zerno.raw.RawImage
 import app.zerno.raw.Shot
+import app.zerno.raw.SwatchScene
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,6 +61,8 @@ data class EditorState(
   val preview: Bitmap? = null,
   val info: String = "",
   val error: String? = null,
+  /** Этот кадр, проявленный каждым профилем, — для ленты профилей в редакторе. */
+  val profilePreviews: Map<Profile, Bitmap> = emptyMap(),
 )
 
 data class UiState(
@@ -81,6 +84,8 @@ data class UiState(
   val shadingCorrection: Boolean = true,
   val crashReport: String? = null,
   val showTip: Boolean = false,
+  /** Последний кадр (или сцена-образец), проявленный каждым профилем, — для ленты профилей. */
+  val profilePreviews: Map<Profile, Bitmap> = emptyMap(),
 )
 
 private class Pending(
@@ -137,6 +142,12 @@ class ZernoViewModel(app: Application) : AndroidViewModel(app) {
       }
     }
     viewModelScope.launch { refreshGallery() }
+    viewModelScope.launch(Dispatchers.Default) {
+      // Пока нет своего снимка, профили показываем на сцене-образце.
+      val swatches = runCatching { Profile.entries.associateWith { toBitmap(SwatchScene.develop(it)) } }
+        .onFailure { EventLog.add("Образцы профилей не проявились", it) }.getOrNull()
+      if (swatches != null) _state.update { s -> if (s.profilePreviews.isEmpty()) s.copy(profilePreviews = swatches) else s }
+    }
     viewModelScope.launch(Dispatchers.Default) { for (p in queue) process(p) }
   }
 
@@ -218,6 +229,8 @@ class ZernoViewModel(app: Application) : AndroidViewModel(app) {
       val thumb = toBitmap(RawDeveloper.develop(shot.raw, pipeline, shading,
         DevelopOptions(p.profile, ev, stepFor(shot.raw, 480), shot.rotation)))
       _state.update { it.copy(lastThumb = thumb, lastShotName = shot.name) }
+      runCatching { profilePreviews(shot, pipeline, shading) }
+        .onSuccess { previews -> _state.update { it.copy(profilePreviews = previews) } }
 
       val bitmap = developFull(shot, pipeline, shading, DevelopOptions(p.profile, ev, 1, shot.rotation))
       val uri = MediaSaver.saveJpeg(getApplication(), shot.name, bitmap, shot.timestamp)
@@ -232,6 +245,7 @@ class ZernoViewModel(app: Application) : AndroidViewModel(app) {
       runCatching { repo.save(shot, thumb, uri) }.onFailure { EventLog.add("Копия для перепроявки не сохранена", it) }
       EventLog.add("Готов ${shot.name}: ${p.profile.title}, ${"%+.2f".format(ev)} EV, " +
         "${pipeline.used.title}, ${(System.nanoTime() - started) / 1_000_000} мс")
+      EventLog.add(colorReport(shot, pipeline))
       refreshGallery()
     } catch (e: Throwable) {
       EventLog.add("Обработка ${shot.name} не удалась", e)
@@ -300,6 +314,15 @@ class ZernoViewModel(app: Application) : AndroidViewModel(app) {
       }
       _state.update { s -> s.copy(editor = s.editor?.copy(shot = shot, autoEv = ev)) }
       redevelop()
+      val previews = withContext(Dispatchers.Default) {
+        runCatching {
+          val p = ColorPipelineResolver.resolve(shot.meta, ColorStrategy.AUTO)
+          profilePreviews(shot, p, shot.shading.takeIf { defaults.shading })
+        }.getOrNull()
+      }
+      if (previews != null) {
+        _state.update { s -> s.copy(editor = s.editor?.takeIf { it.name == name }?.copy(profilePreviews = previews) ?: s.editor) }
+      }
     }
   }
 
@@ -398,9 +421,33 @@ class ZernoViewModel(app: Application) : AndroidViewModel(app) {
     Bitmap.createBitmap(img.argb, img.width, img.height, Bitmap.Config.ARGB_8888)
 
   /** Чётный шаг, при котором длинная сторона результата не больше [target]. */
+  /** Маленькие превью кадра во всех профилях (каждый со своей автоэкспозицией). */
+  private fun profilePreviews(
+    shot: Shot,
+    pipeline: app.zerno.raw.ColorPipeline,
+    shading: app.zerno.raw.ShadingMap?,
+  ): Map<Profile, Bitmap> {
+    val step = stepFor(shot.raw, 220)
+    return Profile.entries.associateWith { profile ->
+      val ev = AutoExposure.compute(shot.raw, pipeline, shading, profile)
+      toBitmap(RawDeveloper.develop(shot.raw, pipeline, shading, DevelopOptions(profile, ev, step, shot.rotation)))
+    }
+  }
+
   private fun stepFor(raw: RawImage, target: Int): Int {
     val s = ceil(maxOf(raw.width, raw.height) / target.toDouble()).toInt().coerceAtLeast(2)
     return if (s % 2 == 0) s else s + 1
+  }
+
+  /** Всё о цвете кадра одной записью: по ней разбираем отчёты тестировщиков без самого RAW. */
+  private fun colorReport(shot: Shot, pipeline: app.zerno.raw.ColorPipeline) = buildString {
+    append("  ${shot.captureInfo.trim().replace("\n", "; ")}")
+    append("; цвет: ${pipeline.used.title}")
+    pipeline.sceneTemperature?.let { append(", сцена ≈${"%.0f".format(it)} K") }
+    append(", WB ${pipeline.wbGains.joinToString("/") { "%.3f".format(it) }}")
+    append(", матрица ISP: ${shot.meta.ispMatrix?.let { if (it.isIdentity()) "единичная" else "есть" } ?: "нет"}")
+    if (pipeline.notes.isNotEmpty()) append("; ${pipeline.notes.joinToString("; ")}")
+    append("; sRGB←сенсор: ${pipeline.srgbFromCamera}")
   }
 
   private fun captureInfo(option: CameraOption, r: CaptureResult, raw: RawImage, shading: app.zerno.raw.ShadingMap?) =
